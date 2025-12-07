@@ -7,17 +7,25 @@
 
 import Foundation
 import CoreAudio
+import AudioToolbox
+import Cocoa
 
 class VolumeManager {
     static let shared = VolumeManager()
     
-    private var audioDeviceID: AudioDeviceID?
+    private var listenerBlock: AudioObjectPropertyListenerBlock?
     
     private init() {
-        setupAudioDevice()
+        setupDeviceChangeListener()
+        NSLog("VolumeManager initialized")
     }
     
-    private func setupAudioDevice() {
+    deinit {
+        removeDeviceChangeListener()
+    }
+    
+    /// Get the current default output device dynamically
+    private func getDefaultOutputDevice() -> AudioDeviceID? {
         var deviceID: AudioDeviceID = 0
         var deviceSize: UInt32 = UInt32(MemoryLayout<AudioDeviceID>.size)
         
@@ -37,71 +45,94 @@ class VolumeManager {
         )
         
         if status == noErr {
-            self.audioDeviceID = deviceID
+            return deviceID
         } else {
-            print("Failed to get default audio device: \(status)")
+            NSLog("Failed to get default audio device: %d", status)
+            return nil
         }
     }
+    
+    /// Setup listener for default output device changes
+    private func setupDeviceChangeListener() {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        
+        listenerBlock = { (_, _) in
+            NSLog("Default audio output device changed")
+        }
+        
+        AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            DispatchQueue.main,
+            listenerBlock!
+        )
+    }
+    
+    /// Remove device change listener
+    private func removeDeviceChangeListener() {
+        guard let block = listenerBlock else { return }
+        
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        
+        AudioObjectRemovePropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            DispatchQueue.main,
+            block
+        )
+    }
+    
+    // MARK: - Get Current Volume (using AppleScript - most reliable)
     
     func getCurrentVolume() -> Float {
-        guard let deviceID = audioDeviceID else { return 0.0 }
+        let script = NSAppleScript(source: "output volume of (get volume settings)")
+        var error: NSDictionary?
+        let result = script?.executeAndReturnError(&error)
         
-        var volume: Float32 = 0.0
-        var volumeSize: UInt32 = UInt32(MemoryLayout<Float32>.size)
-        
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyVolumeScalar,
-            mScope: kAudioDevicePropertyScopeOutput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        
-        let status = AudioObjectGetPropertyData(
-            deviceID,
-            &address,
-            0,
-            nil,
-            &volumeSize,
-            &volume
-        )
-        
-        if status == noErr {
-            return volume
-        } else {
-            print("Failed to get volume: \(status)")
+        if let error = error {
+            NSLog("getCurrentVolume AppleScript error: %@", error)
             return 0.0
         }
+        
+        if let volumeInt = result?.int32Value {
+            let volume = Float(volumeInt) / 100.0
+            return volume
+        }
+        
+        return 0.0
     }
     
+    // MARK: - Set Volume (using AppleScript - works with all devices)
+    
     func setVolume(_ volume: Float) {
-        guard let deviceID = audioDeviceID else { return }
-        
         let clampedVolume = max(0.0, min(1.0, volume))
-        var newVolume: Float32 = clampedVolume
-        let volumeSize: UInt32 = UInt32(MemoryLayout<Float32>.size)
+        let volumePercent = Int(clampedVolume * 100)
         
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyVolumeScalar,
-            mScope: kAudioDevicePropertyScopeOutput,
-            mElement: kAudioObjectPropertyElementMain
-        )
+        NSLog("setVolume called: target=%d%%", volumePercent)
         
-        let status = AudioObjectSetPropertyData(
-            deviceID,
-            &address,
-            0,
-            nil,
-            volumeSize,
-            &newVolume
-        )
+        let script = NSAppleScript(source: "set volume output volume \(volumePercent)")
+        var error: NSDictionary?
+        script?.executeAndReturnError(&error)
         
-        if status != noErr {
-            print("Failed to set volume: \(status)")
+        if let error = error {
+            NSLog("setVolume AppleScript error: %@", error)
+        } else {
+            NSLog("setVolume succeeded: %d%%", volumePercent)
         }
     }
     
     func adjustVolume(delta: Float) {
         let currentVolume = getCurrentVolume()
         let newVolume = currentVolume + delta
+        NSLog("adjustVolume: current=%d%%, delta=%f, new=%d%%", Int(currentVolume * 100), delta, Int(newVolume * 100))
         setVolume(newVolume)
     }
     
@@ -113,53 +144,33 @@ class VolumeManager {
         adjustVolume(delta: -amount)
     }
     
+    // MARK: - Mute Control (using AppleScript)
+    
     func isMuted() -> Bool {
-        guard let deviceID = audioDeviceID else { return false }
+        let script = NSAppleScript(source: "output muted of (get volume settings)")
+        var error: NSDictionary?
+        let result = script?.executeAndReturnError(&error)
         
-        var isMuted: UInt32 = 0
-        var mutedSize: UInt32 = UInt32(MemoryLayout<UInt32>.size)
+        if let error = error {
+            NSLog("isMuted AppleScript error: %@", error)
+            return false
+        }
         
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyMute,
-            mScope: kAudioDevicePropertyScopeOutput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        
-        let status = AudioObjectGetPropertyData(
-            deviceID,
-            &address,
-            0,
-            nil,
-            &mutedSize,
-            &isMuted
-        )
-        
-        return status == noErr ? isMuted != 0 : false
+        return result?.booleanValue ?? false
     }
     
     func setMuted(_ muted: Bool) {
-        guard let deviceID = audioDeviceID else { return }
+        let mutedString = muted ? "true" : "false"
+        let script = NSAppleScript(source: "set volume output muted \(mutedString)")
+        var error: NSDictionary?
+        script?.executeAndReturnError(&error)
         
-        var muteValue: UInt32 = muted ? 1 : 0
-        let mutedSize: UInt32 = UInt32(MemoryLayout<UInt32>.size)
-        
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyMute,
-            mScope: kAudioDevicePropertyScopeOutput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        
-        let status = AudioObjectSetPropertyData(
-            deviceID,
-            &address,
-            0,
-            nil,
-            mutedSize,
-            &muteValue
-        )
-        
-        if status != noErr {
-            print("Failed to set mute state: \(status)")
+        if let error = error {
+            NSLog("setMuted AppleScript error: %@", error)
         }
+    }
+    
+    func toggleMute() {
+        setMuted(!isMuted())
     }
 }

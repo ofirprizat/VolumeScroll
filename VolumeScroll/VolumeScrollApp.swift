@@ -29,20 +29,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, MouseEventMonitorDelegate {
         // Hide from dock since this is a menu bar app
         NSApp.setActivationPolicy(.accessory)
         
-        print("🚀 VolumeScroll launching...")
+        NSLog("🚀 VolumeScroll launching...")
         
         setupStatusBar()
-        print("📊 Status bar setup completed")
+        NSLog("📊 Status bar setup completed")
         
         // Check accessibility permissions first
         let hasPermissions = AXIsProcessTrusted()
-        print("🔒 Accessibility permissions check: \(hasPermissions)")
+        NSLog("🔒 Accessibility permissions check: %@", hasPermissions ? "true" : "false")
         
         if hasPermissions {
             setupMouseMonitoring()
-            print("✅ VolumeScroll started successfully with accessibility permissions")
+            NSLog("✅ VolumeScroll started successfully with accessibility permissions")
         } else {
-            print("⚠️ VolumeScroll started but needs accessibility permissions")
+            NSLog("⚠️ VolumeScroll started but needs accessibility permissions")
             // Don't show alert immediately, let user click the menu item instead
         }
     }
@@ -197,19 +197,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, MouseEventMonitorDelegate {
     func didDetectScrollEvent(deltaY: CGFloat, at location: NSPoint) {
         let detectedArea = areaDetector.detectArea(at: location)
         
+        NSLog("didDetectScrollEvent: deltaY=%f, location=%@, area=%@", deltaY, location.debugDescription, String(describing: detectedArea))
+        
         // Only respond to scroll events over the Dock or Menu Bar
-        guard detectedArea == .dock || detectedArea == .menuBar else { return }
+        guard detectedArea == .dock || detectedArea == .menuBar else {
+            return
+        }
         
         // Calculate volume adjustment (positive deltaY = scroll up = increase volume)
         let volumeAdjustment: Float = Float(deltaY) * 0.01  // Adjust sensitivity as needed
         
+        NSLog("About to adjust volume by %f", volumeAdjustment)
+        
         // Apply volume change
         volumeManager.adjustVolume(delta: volumeAdjustment)
+        
+        // Update the menu bar volume display in real-time
+        updateVolumeDisplay()
         
         // Optional: Provide visual feedback
         let areaName = detectedArea == .dock ? "Dock" : "Menu Bar"
         let volumePercent = Int(volumeManager.getCurrentVolume() * 100)
-        print("Volume adjusted to \(volumePercent)% via \(areaName)")
+        NSLog("Volume adjusted to %d%% via %@", volumePercent, areaName)
     }
 }
 

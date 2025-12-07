@@ -20,6 +20,7 @@ class AreaDetector {
     private var menuBarHeight: CGFloat = 24.0  // Default menu bar height
     private var dockHeight: CGFloat = 64.0     // Estimated dock height
     private var dockPosition: DockPosition = .bottom
+    private var dockScreen: NSScreen?          // Screen where the dock is located
     
     private enum DockPosition {
         case bottom, left, right
@@ -34,6 +35,10 @@ class AreaDetector {
         // Get menu bar height from main screen
         if let mainScreen = NSScreen.main {
             menuBarHeight = mainScreen.frame.height - mainScreen.visibleFrame.maxY
+            // Ensure a minimum menu bar height
+            if menuBarHeight < 20 {
+                menuBarHeight = 24.0
+            }
         }
         
         // Detect dock position and approximate size
@@ -41,29 +46,41 @@ class AreaDetector {
     }
     
     private func detectDockConfiguration() {
-        guard let mainScreen = NSScreen.main else { return }
-        
-        let screenFrame = mainScreen.frame
-        let visibleFrame = mainScreen.visibleFrame
-        
-        // Determine dock position based on visible frame differences
-        if visibleFrame.minY > screenFrame.minY {
-            // Dock is at bottom
-            dockPosition = .bottom
-            dockHeight = visibleFrame.minY - screenFrame.minY
-        } else if visibleFrame.minX > screenFrame.minX {
-            // Dock is on the left
-            dockPosition = .left
-            dockHeight = visibleFrame.minX - screenFrame.minX
-        } else if visibleFrame.maxX < screenFrame.maxX {
-            // Dock is on the right  
-            dockPosition = .right
-            dockHeight = screenFrame.maxX - visibleFrame.maxX
-        } else {
-            // Default to bottom if can't determine
-            dockPosition = .bottom
-            dockHeight = 64.0
+        // Find which screen has the dock by checking all screens
+        // The dock is on the screen where visibleFrame differs from frame
+        for screen in NSScreen.screens {
+            let screenFrame = screen.frame
+            let visibleFrame = screen.visibleFrame
+            
+            // Check for dock at bottom
+            if visibleFrame.minY > screenFrame.minY + 1 {
+                dockPosition = .bottom
+                dockHeight = visibleFrame.minY - screenFrame.minY
+                dockScreen = screen
+                return
+            }
+            
+            // Check for dock on left
+            if visibleFrame.minX > screenFrame.minX + 1 {
+                dockPosition = .left
+                dockHeight = visibleFrame.minX - screenFrame.minX
+                dockScreen = screen
+                return
+            }
+            
+            // Check for dock on right
+            if visibleFrame.maxX < screenFrame.maxX - 1 {
+                dockPosition = .right
+                dockHeight = screenFrame.maxX - visibleFrame.maxX
+                dockScreen = screen
+                return
+            }
         }
+        
+        // Default to main screen with bottom dock if can't determine
+        dockPosition = .bottom
+        dockHeight = 64.0
+        dockScreen = NSScreen.main
     }
     
     private func observeSystemChanges() {
@@ -77,36 +94,60 @@ class AreaDetector {
         }
     }
     
+    /// Find the screen containing the given point
+    private func screenContaining(point: NSPoint) -> NSScreen? {
+        for screen in NSScreen.screens {
+            if screen.frame.contains(point) {
+                return screen
+            }
+        }
+        return nil
+    }
+    
     func detectArea(at point: NSPoint) -> DetectedArea {
-        guard let mainScreen = NSScreen.main else { return .other }
+        // Find which screen contains the mouse pointer
+        guard let screen = screenContaining(point: point) else {
+            return .other
+        }
         
-        let screenFrame = mainScreen.frame
+        let screenFrame = screen.frame
         
-        // Check if point is in menu bar area
-        if isPointInMenuBar(point, screenFrame: screenFrame) {
+        // Check if point is in menu bar area (menu bar exists on all screens when "Displays have separate Spaces" is enabled)
+        if isPointInMenuBar(point, screen: screen) {
             return .menuBar
         }
         
-        // Check if point is in dock area
-        if isPointInDock(point, screenFrame: screenFrame) {
+        // Check if point is in dock area (dock only exists on one screen)
+        if isPointInDock(point, screenFrame: screenFrame, screen: screen) {
             return .dock
         }
         
         return .other
     }
     
-    private func isPointInMenuBar(_ point: NSPoint, screenFrame: NSRect) -> Bool {
+    private func isPointInMenuBar(_ point: NSPoint, screen: NSScreen) -> Bool {
+        let screenFrame = screen.frame
+        
+        // Calculate menu bar height for this specific screen
+        let screenMenuBarHeight = screenFrame.height - screen.visibleFrame.maxY
+        let effectiveMenuBarHeight = max(screenMenuBarHeight, 24.0) // Ensure minimum height
+        
         let menuBarRect = NSRect(
             x: screenFrame.minX,
-            y: screenFrame.maxY - menuBarHeight,
+            y: screenFrame.maxY - effectiveMenuBarHeight,
             width: screenFrame.width,
-            height: menuBarHeight
+            height: effectiveMenuBarHeight
         )
         
         return menuBarRect.contains(point)
     }
     
-    private func isPointInDock(_ point: NSPoint, screenFrame: NSRect) -> Bool {
+    private func isPointInDock(_ point: NSPoint, screenFrame: NSRect, screen: NSScreen) -> Bool {
+        // Dock only exists on one screen - check if this is the dock screen
+        guard screen == dockScreen else {
+            return false
+        }
+        
         let dockRect: NSRect
         
         switch dockPosition {
@@ -138,18 +179,22 @@ class AreaDetector {
     
     // Helper method for debugging
     func getAreaInfo() -> String {
-        guard let mainScreen = NSScreen.main else { return "No screen available" }
-        
-        let screenFrame = mainScreen.frame
-        let visibleFrame = mainScreen.visibleFrame
-        
-        return """
-        Screen: \(screenFrame)
-        Visible: \(visibleFrame)
+        var info = "Screens:\n"
+        for (index, screen) in NSScreen.screens.enumerated() {
+            let isDockScreen = screen == dockScreen
+            info += """
+            Screen \(index)\(isDockScreen ? " (Dock)" : ""):
+              Frame: \(screen.frame)
+              Visible: \(screen.visibleFrame)
+            
+            """
+        }
+        info += """
         Menu Bar Height: \(menuBarHeight)
         Dock Position: \(dockPosition)
         Dock Height/Width: \(dockHeight)
         """
+        return info
     }
     
     deinit {

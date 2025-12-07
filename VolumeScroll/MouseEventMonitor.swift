@@ -26,25 +26,25 @@ class MouseEventMonitor {
     
     func startMonitoring() {
         guard !_isMonitoring else { 
-            print("⚠️ Mouse monitoring already active")
+            NSLog("⚠️ Mouse monitoring already active")
             return 
         }
         
         // Request accessibility permissions if not already granted
         if !AXIsProcessTrusted() {
-            print("⚠️ No accessibility permissions - attempting to request...")
+            NSLog("⚠️ No accessibility permissions - attempting to request...")
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
             let accessEnabled = AXIsProcessTrustedWithOptions(options as CFDictionary)
             
             if !accessEnabled {
-                print("❌ Accessibility permission required for global mouse monitoring")
-                print("💡 Please go to System Settings > Privacy & Security > Accessibility and enable VolumeScroll")
+                NSLog("❌ Accessibility permission required for global mouse monitoring")
+                NSLog("💡 Please go to System Settings > Privacy & Security > Accessibility and enable VolumeScroll")
                 return
             } else {
-                print("✅ Accessibility permissions granted!")
+                NSLog("✅ Accessibility permissions granted!")
             }
         } else {
-            print("✅ Accessibility permissions already granted")
+            NSLog("✅ Accessibility permissions already granted")
         }
         
         // Create global event monitor for scroll wheel events
@@ -53,7 +53,7 @@ class MouseEventMonitor {
         }
         
         _isMonitoring = true
-        print("✅ Mouse event monitoring started")
+        NSLog("✅ Mouse event monitoring started")
     }
     
     func stopMonitoring() {
@@ -65,7 +65,7 @@ class MouseEventMonitor {
         }
         
         _isMonitoring = false
-        print("🛑 Mouse event monitoring stopped")
+        NSLog("🛑 Mouse event monitoring stopped")
     }
     
     private func handleScrollEvent(_ event: NSEvent) {
@@ -75,9 +75,11 @@ class MouseEventMonitor {
         // Check if we have meaningful scroll delta (ignore tiny movements)
         let deltaY = event.scrollingDeltaY
         
+        NSLog("🖱️ handleScrollEvent called: deltaY=%f at %@", deltaY, mouseLocation.debugDescription)
+        
         // Only process significant scroll movements
         if abs(deltaY) > 0.1 {
-            print("🖱️ Scroll detected: deltaY=\(deltaY) at \(mouseLocation)")
+            NSLog("🖱️ Scroll significant - calling delegate")
             delegate?.didDetectScrollEvent(deltaY: deltaY, at: mouseLocation)
         }
     }
