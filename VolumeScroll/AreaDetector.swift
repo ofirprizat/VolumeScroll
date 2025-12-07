@@ -143,10 +143,9 @@ class AreaDetector {
     }
     
     private func isPointInDock(_ point: NSPoint, screenFrame: NSRect, screen: NSScreen) -> Bool {
-        // Dock only exists on one screen - check if this is the dock screen
-        guard screen == dockScreen else {
-            return false
-        }
+        // Check dock area on ANY screen (dock can move between screens in macOS)
+        // Use a reasonable dock height for screens where dock isn't currently visible
+        let effectiveDockHeight = (screen == dockScreen) ? dockHeight : 70.0
         
         let dockRect: NSRect
         
@@ -156,20 +155,20 @@ class AreaDetector {
                 x: screenFrame.minX,
                 y: screenFrame.minY,
                 width: screenFrame.width,
-                height: dockHeight
+                height: effectiveDockHeight
             )
         case .left:
             dockRect = NSRect(
                 x: screenFrame.minX,
                 y: screenFrame.minY,
-                width: dockHeight,
+                width: effectiveDockHeight,
                 height: screenFrame.height - menuBarHeight
             )
         case .right:
             dockRect = NSRect(
-                x: screenFrame.maxX - dockHeight,
+                x: screenFrame.maxX - effectiveDockHeight,
                 y: screenFrame.minY,
-                width: dockHeight,
+                width: effectiveDockHeight,
                 height: screenFrame.height - menuBarHeight
             )
         }
