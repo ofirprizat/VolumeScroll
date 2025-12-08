@@ -85,25 +85,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, MouseEventMonitorDelegate {
         
         menu.addItem(NSMenuItem.separator())
         
-        // Toggle monitoring - show status based on permissions
-        let hasPermissions = AXIsProcessTrusted()
-        let toggleTitle = hasPermissions ? "Volume Control: Enabled" : "Grant Accessibility Permission"
-        let toggleItem = NSMenuItem(title: toggleTitle, action: #selector(toggleMonitoring), keyEquivalent: "")
-        toggleItem.target = self
-        menu.addItem(toggleItem)
-        
-        // Debug info
-        let debugItem = NSMenuItem(title: "Debug: Permissions = \(hasPermissions)", action: #selector(recheckPermissions), keyEquivalent: "")
-        debugItem.target = self
-        menu.addItem(debugItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Settings
-        let settingsItem = NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ",")
-        settingsItem.target = self
-        menu.addItem(settingsItem)
-        
         // Quit
         let quitItem = NSMenuItem(title: "Quit VolumeScroll", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
@@ -115,37 +96,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, MouseEventMonitorDelegate {
     private func setupMouseMonitoring() {
         mouseMonitor.delegate = self
         mouseMonitor.startMonitoring()
-    }
-    
-    @objc private func toggleMonitoring() {
-        let hasPermissions = AXIsProcessTrusted()
-        print("🔄 Toggle monitoring clicked. Permissions: \(hasPermissions)")
-        
-        if !hasPermissions {
-            showPermissionsAlert()
-        } else {
-            // Restart mouse monitoring
-            mouseMonitor.stopMonitoring()
-            setupMouseMonitoring()
-            print("🔄 Mouse monitoring restarted")
-        }
-    }
-    
-    @objc private func recheckPermissions() {
-        let hasPermissions = AXIsProcessTrusted()
-        print("🔍 Recheck permissions: \(hasPermissions)")
-        
-        if hasPermissions && !mouseMonitor.isMonitoring {
-            setupMouseMonitoring()
-        }
-        
-        updateMenuItems()
-    }
-    
-    @objc private func openSettings() {
-        // Open settings window
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        NSApp.activate(ignoringOtherApps: true)
     }
     
     @objc private func quitApp() {
@@ -176,20 +126,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, MouseEventMonitorDelegate {
     }
     
     private func updateMenuItems() {
-        guard let menu = statusBarItem?.menu,
-              menu.items.count > 2 else { return }
-        
-        let hasPermissions = AXIsProcessTrusted()
-        
-        // Update toggle item (index 2)
-        if let toggleItem = menu.items[safe: 2] {
-            toggleItem.title = hasPermissions ? "Volume Control: Enabled" : "Grant Accessibility Permission"
-        }
-        
-        // Update debug item (index 3)
-        if let debugItem = menu.items[safe: 3] {
-            debugItem.title = "Debug: Permissions = \(hasPermissions)"
-        }
+        // Menu items are now static, only volume display needs updating
+        updateVolumeDisplay()
     }
     
     // MARK: - MouseEventMonitorDelegate
